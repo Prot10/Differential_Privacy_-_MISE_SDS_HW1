@@ -1,0 +1,881 @@
+---
+title: "Statistical Methods in Data Science - Homework 1"
+output:
+  html_document: default
+  pdf_document: default
+date: '2022-11-18'
+---
+
+|      Student      | Matricola |                                             Email                                              |
+|:-----------------:|:-----------------:|:----------------------------------:|
+|  Protani Andrea   |  1860126  |  [protani.1860126\@studenti.uniroma1.it](mailto:protani.1860126@studenti.uniroma1.it){.email}  |
+| Tromboni Gabriele |  2088799  | [tromboni.2088799\@studenti.uniroma1.it](mailto:tromboni.2088799@studenti.uniroma1.it){.email} |
+|   Boesso Simone   |  1800408  |   [boesso.1800408\@studenti.uniroma1.it](mailto:boesso.1800408@studenti.uniroma1.it){.email}   |
+
+## Exercise 1
+
+#### Stopping Time
+
+**Process**: suppose that $X \sim \text{Unif}(0, 1)$, and suppose we independently draw $\{Y1, Y2, Y3, . . .\}$ from yet another $\text{Unif}(0, 1)$ model until we reach the random stopping time $T$ such that $(Y_T < X)$.\
+**Question**: it can be shown that the (marginal) PMF of $T$ is such that Pr$(T = t) = \frac{1}{t(t+1)}$ for $t \in \{1,2,3,...\}$. Setup a simulation in R that implements the sampling scheme above in order to numerically check this result. Quantitatively check how the simulation size impacts the approximation. Make some suitable plot to support your comments and conclusions.\
+
+------------------------------------------------------------------------
+
+What was our idea in order to write code as fast as possible?
+
+-   The event $T$ is {*first instant time such that* $(Y_T < X)$ *happens*}, that is the first "trial" at which that condition happens
+
+-   For this very reason, $T$ conditionally $X=x$ is distributed as a Geometric Distribution with probability of success as $x$, namely $(T|X=x) \sim Geom(x)$.
+
+-   A variable with geometric distribution returns the number of times it takes for a certain condition to happen, which in our case is the waiting time $T$ until $(Y_T<X)$
+
+So basically our code is based on the idea written above, picking randomly observations from a Geometric Distribution with probability of success equal to a random sample from a $Unif(0,1)$. This will be the random stopping time that we increment by 1 because we want our counter to start from 1 and not from 0.\
+For the last M we will use an approach also based on parallelization through the library future.apply which allows us to speed up the process by a few tenths.
+
+Let's calculate the median time taken for each $\texttt{M}$ to do the simulation.
+
+```{r echo=FALSE}
+N = 100
+M = c(100, 1000, 10000, 100000, 1000000, 10000000)
+tempi_finali = rep(NA, length(M))
+tempi = rep(NA, N)
+```
+
+```{r}
+library(future.apply, quietly = TRUE)
+
+cores = parallel::detectCores()
+
+for (m in 1:length(M)){
+  m1 = M[m]
+  for (m2 in 1:N){
+    set.seed(13112221)
+    if (m == 6){
+      plan(multisession)
+      beg <- Sys.time()
+      new_M = M/cores
+      t_data = rep(NA, cores)
+      t_data = future_lapply(t_data, future.seed=T, function(m){
+        t = rgeom(new_M, runif(new_M)) + 1
+        return (t)
+      })
+      tempi[m2] = Sys.time() - beg
+    }
+    else {
+      beg = Sys.time()
+      t_data = rgeom(m1, runif(m1)) + 1
+      tempi[m2] = Sys.time() - beg
+    }
+  }
+  tempi_finali[m] = round(median(tempi), 3)
+}
+tempi_finali
+```
+
+Let's now compare with some plots our result with the theoretical distribution of $T$ for each $\texttt{M}$, namely $\mathbb{P}(T = t) = \frac{1}{t(t+1)}$
+
+```{r echo=FALSE, fig.height=12, fig.width=10.5}
+t_data_100 = rgeom(M[1], runif(M[1])) + 1
+t_data_1000 = rgeom(M[2], runif(M[2])) + 1 
+t_data_10000 = rgeom(M[3], runif(M[3])) + 1 
+t_data_100000 = rgeom(M[4], runif(M[4])) + 1 
+t_data_1000000 = rgeom(M[5], runif(M[5])) + 1 
+t_data_10000000 = rgeom(M[6], runif(M[6])) + 1 
+
+dist = function(t) (1/(t*(t+1)))
+
+t_examples = seq(1, 10, 1)
+
+average_100 = function(t) (mean(t_data_100 == t))
+average_vec_100 = Vectorize(average_100)
+
+average_1000 = function(t) (mean(t_data_1000 == t))
+average_vec_1000 = Vectorize(average_1000)
+
+average_10000 = function(t) (mean(t_data_10000 == t))
+average_vec_10000 = Vectorize(average_10000)
+
+average_100000 = function(t) (mean(t_data_100000 == t))
+average_vec_100000 = Vectorize(average_100000)
+
+average_1000000 = function(t) (mean(t_data_1000000 == t))
+average_vec_1000000 = Vectorize(average_1000000)
+
+average_10000000 = function(t) (mean(t_data_10000000 == t))
+average_vec_10000000 = Vectorize(average_10000000)
+
+par(mfrow=c(3,2))
+
+plot(t_examples, average_vec_100(t_examples)[1:10], type='h', lwd=2,
+     col='orchid', xlab='Stopping time t', ylab='Density', main='True vs estimated with M=100')
+points(t_examples, average_vec_100(t_examples)[1:10], pch=19, cex=1.2, col='orchid')
+grid()
+curve(dist, add=T, lwd=4, col=rgb(1, 0, 0, 0.4))
+legend('topright', c('Simulation', 'Real density'), col=c('orchid', rgb(1, 0, 0, 0.4)), pch = 19)
+
+plot(t_examples, average_vec_1000(t_examples)[1:10], type='h', lwd=2, 
+     col='orchid', xlab='Stopping time t', ylab='Density', main='True vs estimated with M=1000')
+points(t_examples, average_vec_1000(t_examples)[1:10], pch=19, cex=1.2, col='orchid')
+grid()
+curve(dist, add=T, lwd=4, col=rgb(1, 0, 0, 0.4))
+legend('topright', c('Simulation', 'Real density'), col=c('orchid', rgb(1, 0, 0, 0.4)), pch = 19)
+
+plot(t_examples, average_vec_10000(t_examples)[1:10], type='h', lwd=2, 
+     col='orchid', xlab='Stopping time t', ylab='Density', main='True vs estimated with M=10000')
+points(t_examples, average_vec_10000(t_examples)[1:10], pch=19, cex=1.2, col='orchid')
+grid()
+curve(dist, add=T, lwd=4, col=rgb(1, 0, 0, 0.4))
+legend('topright', c('Simulation', 'Real density'), col=c('orchid', rgb(1, 0, 0, 0.4)), pch = 19)
+
+plot(t_examples, average_vec_100000(t_examples)[1:10], type='h', lwd=2, 
+     col='orchid', xlab='Stopping time t', ylab='Density', main='True vs estimated with M=100000')
+grid()
+points(t_examples, average_vec_100000(t_examples)[1:10], pch=19, cex=1.2, col='orchid')
+curve(dist, add=T, lwd=4, col=rgb(1, 0, 0, 0.4))
+legend('topright', c('Simulation', 'Real density'), col=c('orchid', rgb(1, 0, 0, 0.4)), pch = 19)
+
+plot(t_examples, average_vec_1000000(t_examples)[1:10], type='h', lwd=2, 
+     col='orchid', xlab='Stopping time t', ylab='Density', main='True vs estimated with M=1000000')
+grid()
+points(t_examples, average_vec_1000000(t_examples)[1:10], pch=19, cex=1.2, col='orchid')
+curve(dist, add=T, lwd=4, col=rgb(1, 0, 0, 0.4))
+legend('topright', c('Simulation', 'Real density'), col=c('orchid', rgb(1, 0, 0, 0.4)), pch = 19)
+
+plot(t_examples, average_vec_10000000(t_examples)[1:10], type='h', lwd=2, 
+     col='orchid', xlab='Stopping time t', ylab='Density', main='True vs estimated with M=10000000')
+points(t_examples, average_vec_10000000(t_examples)[1:10], pch=19, cex=1.2, col='orchid')
+grid()
+curve(dist, add=T, lwd=4, col=rgb(1, 0, 0, 0.4))
+legend('topright', c('Simulation', 'Real density'), col=c('orchid', rgb(1, 0, 0, 0.4)), pch = 19)
+```
+
+From the plots it can be seen that already with M=1000 the approximation is quite good and from M=10000 the real density and the estimated one practically coincide.
+
+As a last step let's visualize also how our code scale with the increase of $\texttt{M}$.
+
+```{r echo=FALSE, fig.height=7.2, fig.width=9.6}
+plot(1:6, tempi_finali, xaxt = "n", 
+ xlab='M', ylab='Seconds', main='Median time taken for each M', type='o', pch=16, lwd=2, col='orchid')
+grid()
+axis(1, at=1:6, labels=c('100', '1000', '10000', '100000', '1000000', '10000000'))
+```
+
+| Simulation Size M |        Time         |
+|:-----------------:|:-------------------:|
+|        100        |   $\approx$ 0 sec   |
+|       1.000       |   $\approx$ 0 sec   |
+|      10.000       | $\approx$ 0.002 sec |
+|      100.000      | $\approx$ 0.015 sec |
+|     1.000.000     | $\approx$ 0.14 sec  |
+|    10.000.000     | $\approx$ 0.91 sec  |
+
+To better appreciate the benefit of parallelizing the code we increase the simulation size to M=100.000.000
+
+Let's first run the base code and check the time that it takes:
+
+```{r echo=FALSE}
+set.seed(13112221)
+
+beg = Sys.time()
+new_M = 100000000
+t_data = rgeom(new_M, runif(new_M)) + 1
+fin = Sys.time() - beg
+
+round(fin, 3)
+```
+
+And now let's implement the multiprocessing approach:
+
+```{r}
+
+set.seed(13112221)
+
+new_M = 100000000
+cores = parallel::detectCores()
+
+plan(multisession)
+
+beg_mp <- Sys.time()
+
+M = new_M/cores
+
+t_data = rep(NA, cores)
+t_data = future_lapply(t_data, future.seed=T, function(m){
+  t = rgeom(M, runif(M)) + 1
+  return (t)
+})
+
+fin_mp <- Sys.time() - beg_mp
+round(fin_mp, 3)
+
+```
+
+So these show that with a large $\texttt{M}$ it is very useful to parallelize the code, in fact in this way is almost $70\%$ faster.
+
+## Exercise 2
+
+1.  Let's focus on the univariate case with $d = 1$ so that the the measurement space is the unit interval, $\mathcal X = [0, 1]$. Assume also that the true density $p_X (·)$ behind your data $X$ is $\underline{\text{known}}$ and equal to a Beta($\alpha = 10, \beta = 10$). In this part of the exercise you have to setup up a simulation to compare the Mean Integrated Squared Error ($\texttt{MISE}$, see below) between the true model $p_X (·)$ and its two approximations $\hat p_{n, m} (·)$ and $\hat q_{\epsilon, m}(·)$.\
+    $\texttt{MISE}(p_X, \hat p_{n, m}) = \mathbb{E}_{p_X} (\int_0^1 (p_X(x) - \hat p_{n, m}(x))^2 \text{d}x)$ = { $\texttt{MISE}$ between the true model and the original histogram},\
+    $\texttt{MISE}(p_X, \hat q_{\epsilon, m}) = \mathbb{E}_{p_X, Q} (\int_0^1 (p_X(x) - \hat q_{\epsilon, m}(x))^2 \text{d}x)$ = { $\texttt{MISE}$ between the true model and the privatized histogram}.\
+
+    It is *crucial* to understand that here we are dealing with *two* sources of randomness: 1. the randomness due to iid-sampling from the population model $P_X(·); 2$. the randomness due to the privacy mechanism \$Q(·) \implies \$ for us, this is the $\texttt{IID}$-sampling from the $\texttt{Laplace}$. Consequently, for a generic transformation $r(·)$, the expectation $\mathbb{E}_{p_X, Q}(·)$ above should be parsed as
+
+    $$ \mathbb{E}_{p_X, Q}(r(Z_1, \cdots, Z_k)) \stackrel{\texttt{LLS}}{=} \int \bigg(\int r(z_1,..., z_k) \text{d}Q(z_1,...,z_k|x_1,...,x_n) \bigg) \text{d}P_X(x_1) \cdots P_X(x_n)$$\
+
+    Once this is clear (and you $\underline{\text{must}}$ ask questions if it's not!), the following, are the relevant simulation parameters to try:
+
+    -   Pick a large enough simulation size M that does not cook your CPU;
+    -   $n \in \{100, 1000 \}$;
+    -   $\epsilon \in \{0.1, 0.001 \}$;
+    -   $m \in \text{grid}([5, 50])$, size the grid wisely: not too coarse to achieve decent resolution, not too fine to save CPU-time.
+
+    ------------------------------------------------------------------------
+
+    We initialize the parameters by choosing M=1000 and m as a sequence from 5 to 50 of step 5.
+
+    ```{r echo=FALSE}
+    M = 1000
+    n = c(100, 1000)
+    m = seq(5, 50, 5)
+    epsilon = c(0.1, 0.001)
+    ```
+
+First MISE: to estimate the first MISE we use the stepfun to approximate the histogram, we create a function to calculate the squared differences, i.e. the argument of the integral and we repeat the sampling and relative calculation of the integral for M times to then calculate the empirical mean.
+
+    ```{r echo=FALSE}
+    square_diff = function(x){
+      s_d = (dbeta(x, 10, 10) - step_fun(x))^2
+      return (s_d)
+    }
+
+    errors = rep(NA, M)
+    MISE1 = matrix(NA, length(n), length(m))
+    ```
+
+```{r , fig.height=10.5, fig.width=13.5}
+par(mfrow=c(2, 2))
+    for (n_rep in 1:length(n)){
+      n1 = n[n_rep]
+      for (i in 1:length(m)){
+    m1 = m[i]
+    for (j in 1:M){
+      X = rbeta(n1, 10, 10)
+      classes = seq(min(X), max(X), (max(X) - min(X)) / m1)
+      p_hat = hist(X, breaks=classes, plot=F)
+      step_fun = stepfun(p_hat$breaks, c(0, p_hat$density, 0))
+      errors[j] = integrate(square_diff, 0, 1, subdivisions=1000)$value
+      if (n1==100 & m1==25 & j==500){
+        hist(X, breaks=classes, prob=T, col='cornflowerblue', border='white',
+             main='Real density of a Beta(10, 10) vs\nthe histogram of the simulation',
+             xlab='', ylab='Density', sub='Example with n=100 and m=25')
+        grid()
+        box()
+        curve(dbeta(x, 10, 10), col=rgb(1,0,0,0.5), add=T, lwd=3)
+      }
+      if (n1==1000 & m1==25 & j==500){
+        hist(X, breaks=classes, prob=T, col='cornflowerblue', border='white',
+             main='Real density of a Beta(10, 10) vs\nthe histogram of the simulation',
+             xlab='', ylab='Density', sub='Example with n=100 and m=25')
+        grid()
+        box()
+        curve(dbeta(x, 10, 10), col=rgb(1,0,0,0.5), add=T, lwd=3)
+      }
+    }
+    MISE1[n_rep, i] = round(mean(errors), 3)
+      } 
+    }
+
+    plot(seq(5, 50, 5), MISE1[1,], type='o', pch=16, lwd=2, col='cornflowerblue',
+     main='MISE behavior with\nn=100 and different m',
+     xlab='m', ylab='MISE')
+    grid()
+    plot(seq(5, 50, 5), MISE1[2,], type='o', pch=16, lwd=2, col='cornflowerblue',
+     main='MISE behavior with\nn=1000 and different m',
+     xlab='m', ylab='MISE')
+    grid()
+    
+```
+
+Second MISE: first we use the $\texttt{rlaplace}$ function of the VGAM package to perturb the histograms, at this point we pass from the new counts to the densities which we then pass to stepfun, then we continue as in the first MISE.
+
+```{r echo=FALSE, warning=FALSE}
+library(VGAM, quietly=T)
+
+square_diff = function(x){
+  s_d = (dbeta(x, 10, 10) - step_fun(x))^2
+  return (s_d)
+}
+
+errors = rep(NA, M)
+
+MISE2 = as.data.frame(matrix(nrow=length(m), ncol=4))
+colnames(MISE2) = c('n100eps01', 'n1000eps01', 'n100eps0001', 'n1000eps0001')
+```
+
+```{r , warning=FALSE, fig.height=10.5, fig.width=13.5}
+par(mfrow=c(2, 2))
+
+for (n_rep in 1:length(n)){
+  n1 = n[n_rep]
+  for (eps in epsilon){
+    for (i in 1:length(m)){
+      m1 = m[i]
+      for (j in 1:M){
+        X = rbeta(n1, 10, 10)
+        classes = seq(min(X), max(X), (max(X) - min(X)) / m1)
+        p_hat = hist(X, breaks=classes, plot=F)
+        nu = rlaplace(m1, 0, sqrt(4/(eps^2)))
+        q_hat = p_hat$counts + nu
+        q_hat[q_hat < 0] = 0
+        bin_width = classes[2] - classes[1]
+        q_hat_density = (q_hat/sum(q_hat))*(1/bin_width)
+        step_fun = stepfun(p_hat$breaks, c(0, q_hat_density, 0))
+        errors[j] = integrate(square_diff, 0, 1, subdivisions=1000, stop.on.error=FALSE)$value
+        if (n1==100 & m1==25 & j==500 & eps==0.1){
+          plot(step_fun, col='cornflowerblue',
+               main='Approximation of the perturbed histogram\n vs the real density',
+               lwd=3,
+               xlab='x', ylab='Density', sub='Example with n=100, m=25 and epsilon=0.1')
+          grid()
+          box()
+          curve(dbeta(x, 10, 10), col=rgb(1,0,0,0.5), add=T, lwd=3)
+        }
+        if (n1==1000 & m1==25 & j==500 & eps==0.001){
+          plot(step_fun, col='cornflowerblue',
+               main='Approximation of the perturbed histogram\n vs the real density',
+               lwd=3,
+               xlab='x', ylab='Density', sub='Example with n=1000, m=25 and epsilon=0.001')
+          grid()
+          box()
+          curve(dbeta(x, 10, 10), col=rgb(1,0,0,0.5), add=T, lwd=3)
+        }
+      }
+      if (n1 == 100 & eps == 0.1) MISE2$n100eps01[i] = round(mean(errors), 3)
+      if (n1 == 100 & eps == 0.001) MISE2$n100eps0001[i] = round(mean(errors), 3)
+      if (n1 == 1000 & eps == 0.1) MISE2$n1000eps01[i] = round(mean(errors), 3)
+      if (n1 == 1000 & eps == 0.001) MISE2$n1000eps0001[i] = round(mean(errors), 3)
+    }  
+  }
+}
+
+plot(seq(5, 50, 5), MISE2$n100eps01, type='o', pch=16, lwd=2, col='cornflowerblue',
+     main='MISE behavior with\nn=100 and different m',
+     xlab='m', ylab='MISE', ylim=c(0, 8))
+legend('bottomright', c('eps=0.1', 'eps=0.001'), lty=1, lwd=3, col=c('cornflowerblue', 'coral2'))
+grid()
+lines(seq(5, 50, 5), MISE2$n100eps0001, lwd=2, col='coral2', type='o', pch=16)
+plot(seq(5, 50, 5), MISE2$n1000eps01, type='o', pch=16, lwd=2, col='cornflowerblue',
+     main='MISE behavior with\nn=1000 and different m',
+     xlab='m', ylab='MISE', ylim=c(0, 8))
+legend('topleft', c('eps=0.1', 'eps=0.001'), lty=1, lwd=3, col=c('cornflowerblue', 'coral2'))
+grid()
+lines(seq(5, 50, 5), MISE2$n1000eps0001, lwd=2, col='coral2', type='o', pch=16)
+```
+
+2.  Repeat the exercise above by replacing the single Beta model with a mixture of 2 Beta's (free to choose their parameters) that must induce some "sparsity" in the resulting histogram $\hat p_{n,m}(·)$. In pseudo-R notation, pick $$ p_X(x) = \pi \cdot \text{dbeta}(x | \alpha_1, \beta_1) + (1- \pi) \cdot \text{dbeta}(x | \alpha_2, \beta_2)$$ where $\pi \in (0, 1)$ is the probability to pick observations from the first sub-population. Comparatively comment the results you got under these two different population scenarios: is there informational loss? Explain, possibly also evaluating $\texttt{MISE} (\hat q_{\epsilon, m} , \hat p_{n,m} )$.
+
+To choose the mixture we 'played' with manipulate to find a shape of the mixture that satisfied us.\
+At the end we chose: $A \sim \text{Beta}(17, 5)$, $B \sim \text{Beta}(4, 10)$ and $\pi = 0.3$.\
+So as a first step we initialize the parameters and we create the following functions:\
+- $\texttt{p_X}$: is the density of the mixture\
+- $\texttt{rmixbeta}$: it will be used for the sample\
+- $\texttt{square_diff}$: the new, slightly modified, square loss\
+
+```{r echo=FALSE}
+
+M = 1000
+n = c(100, 1000)
+m = seq(5, 50, 5)
+epsilon = c(0.1, 0.001)
+
+s1A=17
+s2A=5
+s1B=4
+s2B=10
+pi=0.3
+
+p_X = function(x, shape1_A=10, shape2_A=10, shape1_B=10, shape2_B=10, pi=0.5) {
+  return (pi*dbeta(x, shape1_A, shape2_A) + (1-pi)*dbeta(x, shape1_B, shape2_B))
+}
+
+# to extract from the Beta's mixture
+rmixbeta = function(n, shape1_A, shape2_A, shape1_B, shape2_B, pi){
+  simulation = rep(NA, n)
+  for (j in 1:n){
+    pi_sim = runif(1)
+    if (pi_sim < pi){
+      simulation[j] = rbeta(1, shape1_A, shape2_A)
+    }
+    else{
+      simulation[j] = rbeta(1, shape1_B, shape2_B)
+    }
+  }
+  return (simulation)
+}
+
+square_diff = function(x){
+  s_d = (p_X(x, s1A, s2A, s1B, s2B, pi) - step_fun(x))^2
+  return (s_d)
+}
+
+```
+
+Plots of chosen betas, comparison between marginals and generated mixture
+
+```{r echo=FALSE, fig.height=6, fig.width=12}
+
+par(mfrow=c(1,2))
+
+curve(dbeta(x, 17, 5), col=rgb(0, 1, 0, 0.5), lwd=3,
+      main="Beta A and Beta B", xlab='x', ylab='Marginal densities', ylim=c(0, 5))
+polygon(x=c(0, seq(0, 1, 0.01), 1), y=c(0, dbeta(seq(0, 1, 0.01), 17, 5), 0),
+          col=rgb(0, 0.5, 0, 0.3))
+
+curve(dbeta(x, 4, 10), col=rgb(1, 0, 0, 0.5), lwd=3, add=T);
+polygon(x=c(0, seq(0, 1, 0.01), 1), y=c(0, dbeta(seq(0, 1, 0.01), 4, 10), 0),
+          col=rgb(0.5, 0, 0, 0.3));
+box()
+grid()
+
+
+curve(p_X(x, shape1_A=17, shape2_A=5, shape1_B=4, shape2_B=10, pi=0.3),
+        col='orchid', lwd=3, main="Mixture of the two Beta's", 
+        xlab='x', ylab='Joint density', ylim=c(0, 5)); grid();
+polygon(x=c(0, seq(0, 1, 0.01), 1), y=c(0, p_X(seq(0, 1, 0.01), 17, 5, 4, 10, 0.3), 0),
+          col=rgb(0, 0, 0.5, 0.3))
+box()
+grid()
+
+```
+
+Estimation of the first MISE:
+
+```{r echo=FALSE, fig.height=10.5, fig.width=13.5}
+    par(mfrow=c(2, 2))
+
+    errors = rep(NA, M)
+    MISE1 = matrix(NA, length(n), length(m))
+
+    for (n_rep in 1:length(n)){
+      n1 = n[n_rep]
+      for (i in 1:length(m)){
+    m1 = m[i]
+    for (j in 1:M){
+      X = rmixbeta(n1, s1A, s2A, s1B, s2B, pi)
+      classes = seq(min(X), max(X), (max(X) - min(X)) / m1)
+      p_hat = hist(X, breaks=classes, plot=F)
+      step_fun = stepfun(p_hat$breaks, c(0, p_hat$density, 0))
+      errors[j] = integrate(square_diff, 0, 1, subdivisions=1000)$value
+      if (n1==100 & m1==25 & j==500){
+        hist(X, breaks=classes, prob=T, col='cornflowerblue', border='white',
+             main='Real density of the mixture vs\nthe histogram of the simulation',
+             xlab='', ylab='Density', sub='Example with n=100 and m=25')
+        grid()
+        box()
+        curve(p_X(x, s1A, s2A, s1B, s2B, pi), col=rgb(1,0,0,0.5), add=T, lwd=3)
+      }
+      if (n1==1000 & m1==25 & j==500){
+        hist(X, breaks=classes, prob=T, col='cornflowerblue', border='white',
+             main='Real density of the mixture vs\nthe histogram of the simulation',
+             xlab='', ylab='Density', sub='Example with n=1000 and m=25',
+             ylim=c(0,3))
+        grid()
+        box()
+        curve(p_X(x, s1A, s2A, s1B, s2B, pi), col=rgb(1,0,0,0.5), add=T, lwd=3)
+      }
+    }
+    MISE1[n_rep, i] = round(mean(errors), 3)
+      } 
+    }
+
+    plot(seq(5, 50, 5), MISE1[1,], type='o', pch=16, lwd=2, col='cornflowerblue',
+     main='MISE behavior with\nn=100 and different m',
+     xlab='m', ylab='MISE')
+    grid()
+    plot(seq(5, 50, 5), MISE1[2,], type='o', pch=16, lwd=2, col='cornflowerblue',
+     main='MISE behavior with\nn=1000 and different m',
+     xlab='m', ylab='MISE')
+    grid()
+```
+
+Estimation of the second MISE:
+
+```{r echo=FALSE, fig.height=10.5, fig.width=13.5}
+
+par(mfrow=c(2, 2))
+
+errors = rep(NA, M)
+
+MISE2 = as.data.frame(matrix(nrow=length(m), ncol=4))
+colnames(MISE2) = c('n100eps01', 'n1000eps01', 'n100eps0001', 'n1000eps0001')
+
+for (n_rep in 1:length(n)){
+  n1 = n[n_rep]
+  for (eps in epsilon){
+    for (i in 1:length(m)){
+      m1 = m[i]
+      for (j in 1:M){
+        X = rmixbeta(n1, s1A, s2A, s1B, s2B, pi)
+        classes = seq(min(X), max(X), (max(X) - min(X)) / m1)
+        p_hat = hist(X, breaks=classes, plot=F)
+        nu = rlaplace(m1, 0, sqrt(4/(eps^2)))
+        q_hat = p_hat$counts + nu
+        q_hat[q_hat < 0] = 0
+        bin_width = classes[2] - classes[1]
+        q_hat_density = (q_hat/sum(q_hat))*(1/bin_width)
+        step_fun = stepfun(p_hat$breaks, c(0, q_hat_density, 0))
+        errors[j] = integrate(square_diff, 0, 1, subdivisions=1000, stop.on.error=FALSE)$value
+        if (n1==100 & m1==25 & j==500 & eps==0.1){
+          hist(X, breaks=classes, prob=T, col='cornflowerblue', border='white',
+               main='Real density of the mixture vs\nthe histogram of the simulation',
+               xlab='', ylab='Density', sub='Example with n=100, m=25 and epsilon=0.1')
+          grid()
+          box()
+          curve(p_X(x, s1A, s2A, s1B, s2B, pi), col=rgb(1,0,0,0.5), add=T, lwd=3)
+        }
+        if (n1==1000 & m1==25 & j==500 & eps==0.001){
+          hist(X, breaks=classes, prob=T, col='cornflowerblue', border='white',
+               main='Real density of the mixture vs\nthe histogram of the simulation',
+               xlab='', ylab='Density', sub='Example with n=1000, m=25 and epsilon=0.001',
+               ylim=c(0,3))
+          grid()
+          box()
+          curve(p_X(x, s1A, s2A, s1B, s2B, pi), col=rgb(1,0,0,0.5), add=T, lwd=3)
+        }
+      }
+      if (n1 == 100 & eps == 0.1) MISE2$n100eps01[i] = round(mean(errors), 3)
+      if (n1 == 100 & eps == 0.001) MISE2$n100eps0001[i] = round(mean(errors), 3)
+      if (n1 == 1000 & eps == 0.1) MISE2$n1000eps01[i] = round(mean(errors), 3)
+      if (n1 == 1000 & eps == 0.001) MISE2$n1000eps0001[i] = round(mean(errors), 3)
+    }  
+  }
+}
+
+plot(seq(5, 50, 5), MISE2$n100eps01, type='o', pch=16, lwd=2, col='cornflowerblue',
+     main='MISE behavior with\nn=100 and different m',
+     xlab='m', ylab='MISE', ylim=c(0, 5))
+legend('bottomright', c('eps=0.1', 'eps=0.001'), lty=1, lwd=3, col=c('cornflowerblue', 'coral2'))
+grid()
+lines(seq(5, 50, 5), MISE2$n100eps0001, lwd=2, col='coral2', type='o', pch=16)
+plot(seq(5, 50, 5), MISE2$n1000eps01, type='o', pch=16, lwd=2, col='cornflowerblue',
+     main='MISE behavior with\nn=1000 and different m',
+     xlab='m', ylab='MISE', ylim=c(0, 5))
+legend('topleft', c('eps=0.1', 'eps=0.001'), lty=1, lwd=3, col=c('cornflowerblue', 'coral2'))
+grid()
+lines(seq(5, 50, 5), MISE2$n1000eps0001, lwd=2, col='coral2', type='o', pch=16)
+```
+
+Finally we compute $\texttt{MISE}(\hat q_{\epsilon,m}, \hat p_{n,m})$, we have to modify the loss function again because in this case it has to calculate the differences between the approximations of two histograms, so it will receive two stepfunctions as input
+
+```{r echo=FALSE, fig.height=10.5, fig.width=13.5}
+
+par(mfrow=c(2, 2))
+
+square_diff2 = function(x){
+  s_d = (step_fun_q(x) - step_fun_p(x))^2
+  return (s_d)
+}
+
+errors = rep(NA, M)
+
+MISE2 = as.data.frame(matrix(nrow=length(m), ncol=4))
+colnames(MISE2) = c('n100eps01', 'n1000eps01', 'n100eps0001', 'n1000eps0001')
+
+for (n_rep in 1:length(n)){
+  n1 = n[n_rep]
+  for (eps in epsilon){
+    for (i in 1:length(m)){
+      m1 = m[i]
+      for (j in 1:M){
+        X = rmixbeta(n1, s1A, s2A, s1B, s2B, pi)
+        classes = seq(min(X), max(X), (max(X) - min(X)) / m1)
+        p_hat = hist(X, breaks=classes, plot=F)
+        nu = rlaplace(m1, 0, sqrt(4/(eps^2)))
+        q_hat = p_hat$counts + nu
+        q_hat[q_hat < 0] = 0
+        bin_width = classes[2] - classes[1]
+        q_hat_density = (q_hat/sum(q_hat))*(1/bin_width)
+        step_fun_p = stepfun(p_hat$breaks, c(0, p_hat$density, 0))
+        step_fun_q = stepfun(p_hat$breaks, c(0, q_hat_density, 0))
+        errors[j] = integrate(square_diff2, 0, 1, subdivisions=1000, stop.on.error=FALSE)$value
+        if (n1==100 & m1==25 & j==500 & eps==0.1){
+          plot(step_fun_q, col='cornflowerblue',
+               main='Stepfunctions of the simulations', lwd=2,
+               xlab='x', ylab='Density', sub='Example with n=100, m=25 and epsilon=0.1')
+          grid()
+          box()
+          plot(step_fun_p, col='coral2', lwd=2, add=T)
+          legend('topright', c('p_hat', 'q_hat'), lty=1, lwd=3, col=c('coral2', 'cornflowerblue'))
+        }
+        if (n1==1000 & m1==25 & j==500 & eps==0.001){
+          plot(step_fun_q, col='cornflowerblue',
+               main='Stepfunctions of the simulations', lwd=2,
+               xlab='x', ylab='Density', sub='Example with n=1000, m=25 and epsilon=0.001')
+          grid()
+          box()
+          plot(step_fun_p, col='coral2', lwd=2, add=T)
+          legend('topright', c('p_hat', 'q_hat'), lty=1, lwd=3, col=c('coral2', 'cornflowerblue'))
+        }
+      }
+      if (n1 == 100 & eps == 0.1) MISE2$n100eps01[i] = round(mean(errors), 3)
+      if (n1 == 100 & eps == 0.001) MISE2$n100eps0001[i] = round(mean(errors), 3)
+      if (n1 == 1000 & eps == 0.1) MISE2$n1000eps01[i] = round(mean(errors), 3)
+      if (n1 == 1000 & eps == 0.001) MISE2$n1000eps0001[i] = round(mean(errors), 3)
+    }  
+  }
+}
+
+plot(seq(5, 50, 5), MISE2$n100eps01, type='o', pch=16, lwd=2, col='cornflowerblue',
+     main='MISE behavior with\nn=100 and different m',
+     xlab='m', ylab='MISE', ylim=c(0,5))
+legend('bottomright', c('eps=0.1', 'eps=0.001'), lty=1, lwd=3, col=c('cornflowerblue', 'coral2'))
+grid()
+lines(seq(5, 50, 5), MISE2$n100eps0001, lwd=2, col='coral2', type='o', pch=16)
+plot(seq(5, 50, 5), MISE2$n1000eps01, type='o', pch=16, lwd=2, col='cornflowerblue',
+     main='MISE behavior with\nn=1000 and different m',
+     xlab='m', ylab='MISE', ylim=c(0,5))
+legend('topleft', c('eps=0.1', 'eps=0.001'), lty=1, lwd=3, col=c('cornflowerblue', 'coral2'))
+grid()
+lines(seq(5, 50, 5), MISE2$n1000eps0001, lwd=2, col='coral2', type='o', pch=16)
+```
+
+We can see that in every try the MISE is lower when n=1000 in respect n=100, so, as we expected, the simulation size has a positive effect on the approximation.
+
+One important thing to note is that as $\epsilon$ decreases, information loss increases.
+
+When n=100 the MISE increase constantly with m and the best choice for m is 5 or at most 10, regardless of simulated and perturbed histograms.
+
+When n=1000 we have two different behaviors:
+
+-   Non perturbed: the best choice is m around 20
+
+-   Perturbed: the best choice regardless of $\epsilon$ is m equal to 5 or 10
+
+If we now compare the MISE between the mixed beta model and the single one, we can observe that the behaviors are similar but the mixture seems to have lower errors.
+
+3.  Think hard. Can you figure out a simple/small ($n < 100$, only one variable $X$) data collection you can realize in less than two weeks where privacy is key? Remember, the idea is that you can collect the data, but you do not wanna share them as they are (with me in particular) for further statistical analyses. All right, after the brain-storm, collect the data, privatize them with the perturbed histogram approach, and report your analyses to me by sharing a private dataset $\mathcal Z_k = \{Z_1,...,Z_k\}$ together with some context (e.g. what was the main goal of the analysis, how you got the data, how did you choose m, how did you choose $k$ and $\epsilon$, what happened upon privatization, what are the relevant statistics/summaries I must reproduce from the privatized data, etc).
+
+The main goal of our analysis is to derive statistics from the daily habits of us young people.
+
+We created a Microsoft form with three "simple" questions regarding three main topics of our age:
+
+-   smoking
+-   alcohol
+-   sex.
+
+After receiving a fair number of responses that we could analyze, we noticed that the most satisfying, uniform data and the data in which we were most interested were those concerning sexual habits.
+
+```{r echo=FALSE}
+
+dataset = read.csv('dataset.csv', sep=';')
+
+par(mfrow=c(1, 1))
+
+# exctract only the column that we need for this exercise...
+intercourse = dataset$How.many.times.per.month.do.you.have.sex..
+
+```
+
+To have an idea of what we are dealing with let's plot an histogram and a summary
+
+```{r echo=FALSE, fig.height=7.2, fig.width=9.6}
+
+hist(intercourse, col='cornflowerblue', border='white', 
+     main='Histogram of number of intercourse\nper month',
+     xlab='Number of intercourse', ylab='Frequency')
+box()
+grid()
+
+```
+
+```{r echo=FALSE}
+summary(intercourse)
+```
+
+It is clear that there are some outliers that we need to remove...
+
+```{r echo=FALSE, fig.height=7.2, fig.width=9.6}
+
+intercourse = intercourse[intercourse < 100 & intercourse >= 0]
+
+hist(intercourse, col='cornflowerblue', border='white', 
+     main='Histogram of number of intercourse\nper month',
+     xlab='Number of intercourse', ylab='Frequency')
+box()
+grid()
+
+```
+
+Now it's much better so we can move on.
+
+Having received a hundred responses in order to get a fair trade-off between the number of bins and observations made, we thought of dividing our data into $\texttt{m}=10$ bins so that we would have a satisfying amount of data for each. As for $k$, on the other hand, which is the size of our privatized dataset through perturbed histogram approach, we chose $80$, a high value that allows us to maintain the qualities of the informations received without actually showing the latter in its totality. Instead, the choice of $\epsilon$ value in the Laplace mechanism fell to $0.1$ in order to perturb the data significantly but without losing too much information, because an even lower value, as could have been $0.001$, would have made the perturbed dataset too dispersive and misleading compared to the original.
+
+Let's normalize our data dividing each element for the max and plot a new histogram whit number of bins equal to 10.
+
+```{r echo=FALSE, fig.height=5, fig.width=10}
+
+intercourse = intercourse/max(intercourse)
+
+m = 10
+classes = seq(min(intercourse), max(intercourse), 
+              (max(intercourse) - min(intercourse)) / m)
+par(mfrow=c(1, 2))
+hist(intercourse, breaks=classes, col='cornflowerblue', border='white', 
+     main='Histogram of number of\nintercourse per month', 
+     xlab='Number of intercourse normalized', ylab='Frequency')
+box()
+grid()
+boxplot(intercourse, col='cornflowerblue', border='dodgerblue4', 
+        main='Boxplot of number of\nintercourse per month',
+        ylab='Number of intercourse normalized')
+grid()
+
+```
+
+Let's apply the perturbation to our histogram in order to privatize the data. The information we would like to continue to have after perturbing the data are those shown with the summary
+
+```{r echo=FALSE, warning=FALSE}
+
+set.seed(1234569)
+
+epsilon = 0.1
+
+histogram = hist(intercourse, breaks=classes, plot=F)
+
+library(VGAM, quietly=T)
+
+nu = rlaplace(m, 0, sqrt(4/(epsilon^2)))
+
+q_hat = histogram$counts + nu
+q_hat[q_hat < 0] = 0
+round(summary(intercourse), 3)
+
+```
+
+As a last step we sample $k$ elements from our perturbed histogram, this sample will be the new dataset.
+
+```{r , fig.height=7.2, fig.width=9.6}
+
+bin_width = classes[2] - classes[1]
+q_hat_density = (q_hat/sum(q_hat))*(1/bin_width)
+
+k = 80
+from_bins = sample(x=c(1:length(histogram$counts)), size=k, replace=T, 
+                     prob=q_hat_density/sum(q_hat_density))
+new_values = rep(NA, k)
+for (i in 1:length(from_bins)){
+  bin = from_bins[i]
+  new_values[i] = runif(1, histogram$breaks[bin], histogram$breaks[bin+1])
+}
+hist(new_values, prob=T, xlim=c(0, 1), ylim=c(0, 5), col='cornflowerblue', border='white',
+     main='Histogram of the new dataset compared\nto the perturbed histogram', xlab='Bins')
+plot(stepfun(histogram$breaks, c(0, q_hat_density, 0)), add=T, col='coral2', lwd=2, lty=2)
+box()
+grid()
+legend('topright', c('Perturbed histogram', 'Sample from the\nperturbed histogram'), pch=15, cex=1.3, col=c('coral2', 'cornflowerblue'))
+
+```
+
+Let's show main statistics comparing those concerning the perturbed histogram and privatized dataset sample itself. We can notice that the sample approximate quite well the perturbed histogram, but let's check how many information we have lost.
+
+```{r echo=FALSE}
+
+round(summary(intercourse), 3)
+round(summary(new_values), 3)
+
+```
+
+So in the end the new dataset will have dimension:
+
+```{r echo=FALSE}
+
+new_dataset = data.frame(new_values)
+dim(new_dataset)
+
+```
+
+Taking a look of what there is inside...
+
+```{r echo=FALSE}
+
+head(new_dataset)
+
+```
+
+4.  (**Bonus**) Provide some evidence to support the claim that the perturbed histogram $\hat q_{\epsilon, m}(·)$ in Equation 3 is indeed $\epsilon$-private as defined in Equation 1.
+
+We decided to face the proof through a simulation that gives some evidence just for one $\epsilon$, it is based on:
+
+-   extraction of n=10000 elements from a $\text{Beta}(10, 10)$
+-   random choice of an element to replace with a new draw from a $\text{Beta}(10, 10)$
+-   perturbation of the two histograms relating to the two samples (which differ in only one element)
+-   division bin by bin of which we then take the average
+-   process repeated M1=100 times to obtain different ratios of which we then take the maximum
+-   comparison of the maximum with the threshold $e^\epsilon$ where $\epsilon=0.1$
+-   repeat the whole process M2=100 times to see how many times the condition is fulfilled
+
+```{r echo=FALSE, fig.height=7.2, fig.width=9.6}
+M = 100
+M2 = 100
+n = 10000
+m = 25
+epsilon = 0.1
+
+division = rep(NA, M)
+condition = rep(NA, M2)
+```
+
+```{r , fig.height=7.2, fig.width=9.6}
+
+set.seed(69)
+
+prova = function(j){
+  tryCatch({
+  X_samp = rbeta(n, 10, 10)
+  new_X_samp = X_samp
+  change = sample(1:n, 1)
+  new_Xi = rbeta(1, 10, 10)
+  new_X_samp[change] = new_Xi
+  classes1 = seq(min(X_samp), max(X_samp), (max(X_samp) - min(X_samp)) / m)
+  p_hat1 = hist(X_samp, breaks=classes1, plot=F)
+  p_hat2 = hist(new_X_samp, breaks=classes1, plot=F)
+  nu = rlaplace(m, 0, sqrt(4/(epsilon^2)))
+  q_hat1 = p_hat1$counts + nu
+  q_hat1[q_hat1 < 0] = 0
+  q_hat2 = p_hat2$counts + nu
+  q_hat2[q_hat2 < 0] = 0
+  bin_width = classes1[2] - classes1[1]
+  q_hat1_density = (q_hat1/sum(q_hat1))*(1/bin_width)
+  q_hat2_density = (q_hat2/sum(q_hat2))*(1/bin_width)
+  step_fun_q1 = stepfun(p_hat1$breaks, c(0, q_hat1_density, 0))
+  step_fun_q2 = stepfun(p_hat2$breaks, c(0, q_hat2_density, 0))
+  if (i==69 & j==69){
+  plot(step_fun_q1, col='cornflowerblue',
+       main='Stepfunctions of the simulations', lwd=3,
+       xlab='x', ylab='Density', sub='Example with n=100, m=25 and epsilon=0.1')
+  grid()
+  box()
+  plot(step_fun_q2, col='coral2', add=T, lwd=2, lty=3)
+  legend('topright', c('q_hat1', 'q_hat2'), lty=c(1,3), lwd=3, col=c('cornflowerblue', 'coral2'))
+  }
+  div = q_hat1/q_hat2
+  return (div)
+  }, 
+  error = function(e) NA)
+}
+
+for (i in 1:M2){
+  for (j in 1:M){
+    div2 = prova(j)
+    division[j] = mean(div2[!is.na(div2) & !is.infinite(div2)])
+  }
+  condition[i] = max(division[!is.na(division) & !is.infinite(division)]) < exp(epsilon)
+}
+```
+
+The condition was fulfilled 100 times out of 100 for an accuracy equal to 1.
+
+```{r echo=FALSE}
+sum(condition)
+mean(condition)
+```
